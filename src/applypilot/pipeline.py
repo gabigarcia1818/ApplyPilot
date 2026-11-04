@@ -21,7 +21,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from applypilot.config import load_env, ensure_dirs
+from applypilot.config import DEFAULT_MIN_SCORE, load_env, ensure_dirs
 from applypilot.database import init_db, get_connection, get_stats
 
 log = logging.getLogger(__name__)
@@ -121,18 +121,31 @@ def _run_score() -> dict:
         return {"status": f"error: {e}"}
 
 
-def _run_tailor(min_score: int = 7, validation_mode: str = "normal") -> dict:
+def _tailor_stage_status(result: dict) -> str:
+    """Summarize tailoring counts without treating an empty queue as success."""
+    approved = result.get("approved", 0)
+    failed = result.get("failed", 0)
+    errors = result.get("errors", 0)
+
+    if not approved and not failed and not errors:
+        return "no work"
+    if failed or errors:
+        return "partial" if approved else "failed"
+    return "ok"
+
+
+def _run_tailor(min_score: int = DEFAULT_MIN_SCORE, validation_mode: str = "normal") -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
         from applypilot.scoring.tailor import run_tailoring
-        run_tailoring(min_score=min_score, validation_mode=validation_mode)
-        return {"status": "ok"}
+        result = run_tailoring(min_score=min_score, validation_mode=validation_mode)
+        return {**result, "status": _tailor_stage_status(result)}
     except Exception as e:
         log.error("Tailoring failed: %s", e)
         return {"status": f"error: {e}"}
 
 
-def _run_cover(min_score: int = 7, validation_mode: str = "normal") -> dict:
+def _run_cover(min_score: int = DEFAULT_MIN_SCORE, validation_mode: str = "normal") -> dict:
     """Stage: Cover letter generation."""
     try:
         from applypilot.scoring.cover_letter import run_cover_letters
@@ -244,7 +257,7 @@ _PENDING_SQL: dict[str, str] = {
 _STREAM_POLL_INTERVAL = 10
 
 
-def _count_pending(stage: str, min_score: int = 7) -> int:
+def _count_pending(stage: str, min_score: int = DEFAULT_MIN_SCORE) -> int:
     """Count pending work items for a stage."""
     sql = _PENDING_SQL.get(stage)
     if sql is None:
@@ -259,7 +272,7 @@ def _run_stage_streaming(
     stage: str,
     tracker: _StageTracker,
     stop_event: threading.Event,
-    min_score: int = 7,
+    min_score: int = DEFAULT_MIN_SCORE,
     workers: int = 1,
     validation_mode: str = "normal",
 ) -> None:
@@ -291,6 +304,7 @@ def _run_stage_streaming(
 
     # For downstream stages: loop until upstream done + no pending work
     passes = 0
+    tailor_totals = {"approved": 0, "failed": 0, "errors": 0}
     while not stop_event.is_set():
         # Wait for upstream to start producing work (first pass only)
         if passes == 0 and upstream and not tracker.is_done(upstream):
@@ -301,7 +315,10 @@ def _run_stage_streaming(
 
         if pending > 0:
             try:
-                runner(**kwargs)
+                result = runner(**kwargs)
+                if stage == "tailor" and isinstance(result, dict):
+                    for key in tailor_totals:
+                        tailor_totals[key] += result.get(key, 0)
                 passes += 1
             except Exception as e:
                 log.error("Stage '%s' error (pass %d): %s", stage, passes, e)
@@ -316,7 +333,11 @@ def _run_stage_streaming(
             if stop_event.wait(timeout=_STREAM_POLL_INTERVAL):
                 break  # Stop requested
 
-    tracker.mark_done(stage, {"status": "ok", "passes": passes})
+    if stage == "tailor":
+        status = _tailor_stage_status(tailor_totals) if passes else "no work"
+        tracker.mark_done(stage, {**tailor_totals, "status": status, "passes": passes})
+    else:
+        tracker.mark_done(stage, {"status": "ok", "passes": passes})
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +389,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             console.print(f"\n  [red]STAGE FAILED:[/red] {e}")
 
         results.append({"stage": name, "status": status, "elapsed": elapsed})
-        if status not in ("ok", "partial"):
+        if status not in ("ok", "partial", "no work"):
             errors[name] = status
 
         console.print(f"\n  Stage '{name}' completed in {elapsed:.1f}s — {status}")
@@ -435,7 +456,7 @@ def _run_streaming(ordered: list[str], min_score: int, workers: int = 1,
         status = r.get("status", "ok")
 
         results.append({"stage": name, "status": status, "elapsed": elapsed})
-        if status not in ("ok", "partial", "skipped"):
+        if status not in ("ok", "partial", "skipped", "no work"):
             errors[name] = status
 
     return {"stages": results, "errors": errors, "elapsed": total_elapsed}
@@ -443,7 +464,7 @@ def _run_streaming(ordered: list[str], min_score: int, workers: int = 1,
 
 def run_pipeline(
     stages: list[str] | None = None,
-    min_score: int = 7,
+    min_score: int = DEFAULT_MIN_SCORE,
     dry_run: bool = False,
     stream: bool = False,
     workers: int = 1,
@@ -515,7 +536,7 @@ def run_pipeline(
         status_display = r["status"][:30]
         if r["status"] == "ok":
             style = "green"
-        elif r["status"] in ("partial", "skipped"):
+        elif r["status"] in ("partial", "skipped", "no work"):
             style = "yellow"
         else:
             style = "red"

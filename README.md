@@ -28,7 +28,7 @@ Three commands. That's it.
 
 ```bash
 pip install applypilot
-pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex
+pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex curl_cffi
 applypilot init          # one-time setup: resume, profile, preferences, API keys
 applypilot doctor        # verify your setup — shows what's installed and what's missing
 applypilot run           # discover > enrich > score > tailor > cover letters
@@ -38,7 +38,7 @@ applypilot apply -w 3    # parallel apply (3 Chrome instances)
 applypilot apply --dry-run  # fill forms without submitting
 ```
 
-> **Why two install commands?** `python-jobspy` pins an exact numpy version in its metadata that conflicts with pip's resolver, but works fine at runtime with any modern numpy. The `--no-deps` flag bypasses the resolver; the second command installs jobspy's actual runtime dependencies. Everything except `python-jobspy` installs normally.
+> **Why two install commands?** `python-jobspy` pins an exact numpy version in its metadata that conflicts with pip's resolver, but works fine at runtime with any modern numpy. The `--no-deps` flag bypasses the resolver; the second command installs jobspy's runtime dependencies, including `curl_cffi`. Everything except `python-jobspy` installs normally.
 
 ---
 
@@ -135,7 +135,7 @@ Queries Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs via JobSpy. Scrap
 Visits each job URL and extracts the full description. 3-tier cascade: JSON-LD structured data, then CSS selector patterns, then AI-powered extraction for unknown layouts.
 
 ### Score
-AI scores every job 1-10 against your profile. 9-10 = strong match, 7-8 = good, 5-6 = moderate, 1-4 = skip. Only jobs above your threshold proceed to tailoring.
+AI scores every job 1-10 against your profile. 9-10 = strong match, 7-8 = good, 5-6 = moderate, 1-4 = weak. By default, jobs scoring 5 or higher proceed to tailoring so users can see how their experience can be reframed for a moderate match. Use `--min-score` to change the cutoff for tailoring, cover letters, or applications.
 
 ### Tailor
 Generates a custom resume per job: reorders experience, emphasizes relevant skills, incorporates keywords from the job description. Your `resume_facts` (companies, projects, metrics) are preserved exactly. The AI reorganizes but never fabricates.

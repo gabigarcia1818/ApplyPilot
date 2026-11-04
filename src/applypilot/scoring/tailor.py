@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
+from applypilot.config import DEFAULT_MIN_SCORE, RESUME_PATH, TAILORED_DIR, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 from applypilot.scoring.validator import (
@@ -379,6 +379,7 @@ def tailor_resume(
     report: dict = {
         "attempts": 0, "validator": None, "judge": None,
         "status": "pending", "validation_mode": validation_mode,
+        "errors": [],
     }
     avoid_notes: list[str] = []
     tailored = ""
@@ -405,7 +406,8 @@ def tailor_resume(
         # Parse JSON from response
         try:
             data = extract_json(raw)
-        except ValueError:
+        except ValueError as exc:
+            report["errors"].append(f"Attempt {attempt + 1}: {exc}")
             avoid_notes.append("Output was not valid JSON. Return ONLY a JSON object, nothing else.")
             continue
 
@@ -449,13 +451,14 @@ def tailor_resume(
         report["status"] = "approved"
         return tailored, report
 
-    report["status"] = "exhausted_retries"
+    report["status"] = "failed_json"
+    report["error"] = f"Could not parse valid JSON after {report['attempts']} attempts."
     return tailored, report
 
 
 # ── Batch Entry Point ────────────────────────────────────────────────────
 
-def run_tailoring(min_score: int = 7, limit: int = 20,
+def run_tailoring(min_score: int = DEFAULT_MIN_SCORE, limit: int = 20,
                   validation_mode: str = "normal") -> dict:
     """Generate tailored resumes for high-scoring jobs.
 
@@ -489,6 +492,26 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         try:
             tailored, report = tailor_resume(resume_text, job, profile,
                                              validation_mode=validation_mode)
+
+            if not tailored.strip():
+                result = {
+                    "url": job["url"],
+                    "path": None,
+                    "pdf_path": None,
+                    "title": job["title"],
+                    "site": job["site"],
+                    "status": report["status"],
+                    "attempts": report["attempts"],
+                }
+                results.append(result)
+                stats[result["status"]] = stats.get(result["status"], 0) + 1
+                log.error(
+                    "%d/%d [%s] No resume generated after %s attempts for %s: %s",
+                    completed, len(jobs), result["status"].upper(),
+                    result["attempts"], result["title"][:40],
+                    report.get("error", "Tailoring returned empty output."),
+                )
+                continue
 
             # Build safe filename prefix
             safe_title = re.sub(r"[^\w\s-]", "", job["title"])[:50].strip().replace(" ", "_")
@@ -574,17 +597,23 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
 
     elapsed = time.time() - t0
     log.info(
-        "Tailoring done in %.1fs: %d approved, %d failed_validation, %d failed_judge, %d errors",
+        "Tailoring done in %.1fs: %d approved, %d failed_validation, %d failed_judge, "
+        "%d failed_json, %d errors",
         elapsed,
         stats.get("approved", 0),
         stats.get("failed_validation", 0),
         stats.get("failed_judge", 0),
+        stats.get("failed_json", 0),
         stats.get("error", 0),
     )
 
     return {
         "approved": stats.get("approved", 0),
-        "failed": stats.get("failed_validation", 0) + stats.get("failed_judge", 0),
+        "failed": (
+            stats.get("failed_validation", 0)
+            + stats.get("failed_judge", 0)
+            + stats.get("failed_json", 0)
+        ),
         "errors": stats.get("error", 0),
         "elapsed": elapsed,
     }

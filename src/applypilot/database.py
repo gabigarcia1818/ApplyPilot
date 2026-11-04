@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import DB_PATH
+from applypilot.config import DB_PATH, DEFAULT_MIN_SCORE
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -286,14 +286,16 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
     stats["untailored_eligible"] = conn.execute(
         "SELECT COUNT(*) FROM jobs "
-        "WHERE fit_score >= 7 AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL"
+        "WHERE fit_score >= ? AND full_description IS NOT NULL "
+        "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5",
+        (DEFAULT_MIN_SCORE,),
     ).fetchone()[0]
 
     stats["tailor_exhausted"] = conn.execute(
         "SELECT COUNT(*) FROM jobs "
-        "WHERE COALESCE(tailor_attempts, 0) >= 5 "
-        "AND tailored_resume_path IS NULL"
+        "WHERE fit_score >= ? AND full_description IS NOT NULL "
+        "AND COALESCE(tailor_attempts, 0) >= 5 AND tailored_resume_path IS NULL",
+        (DEFAULT_MIN_SCORE,),
     ).fetchone()[0]
 
     # Cover letter stage
@@ -404,7 +406,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     if "?" in where and min_score is not None:
         params.append(min_score)
     elif "?" in where:
-        params.append(7)  # default min_score
+        params.append(DEFAULT_MIN_SCORE)
 
     if min_score is not None and "fit_score" not in where and stage in ("scored", "tailored", "applied"):
         where += " AND fit_score >= ?"
