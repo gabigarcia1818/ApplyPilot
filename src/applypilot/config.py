@@ -161,8 +161,10 @@ def load_base_urls() -> dict[str, str | None]:
 # Default values — referenced across modules instead of magic numbers
 # ---------------------------------------------------------------------------
 
+DEFAULT_MIN_SCORE = 5
+
 DEFAULTS = {
-    "min_score": 7,
+    "min_score": DEFAULT_MIN_SCORE,
     "max_apply_attempts": 3,
     "max_tailor_attempts": 5,
     "poll_interval": 60,

@@ -87,7 +87,7 @@ def _make_mcp_config(cdp_port: int) -> dict:
 # Database operations
 # ---------------------------------------------------------------------------
 
-def acquire_job(target_url: str | None = None, min_score: int = 7,
+def acquire_job(target_url: str | None = None, min_score: int = config.DEFAULT_MIN_SCORE,
                 worker_id: int = 0) -> dict | None:
     """Atomically acquire the next job to apply to.
 
@@ -210,7 +210,7 @@ def release_lock(url: str) -> None:
 # Utility modes (--gen, --mark-applied, --mark-failed, --reset-failed)
 # ---------------------------------------------------------------------------
 
-def gen_prompt(target_url: str, min_score: int = 7,
+def gen_prompt(target_url: str, min_score: int = config.DEFAULT_MIN_SCORE,
                model: str = "sonnet", worker_id: int = 0) -> Path | None:
     """Generate a prompt file and print the Claude CLI command for manual debugging.
 
@@ -547,7 +547,7 @@ def _is_permanent_failure(result: str) -> bool:
 
 def worker_loop(worker_id: int = 0, limit: int = 1,
                 target_url: str | None = None,
-                min_score: int = 7, headless: bool = False,
+                min_score: int = config.DEFAULT_MIN_SCORE, headless: bool = False,
                 model: str = "sonnet", dry_run: bool = False) -> tuple[int, int]:
     """Run jobs sequentially until limit is reached or queue is empty.
 
@@ -651,7 +651,7 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 # ---------------------------------------------------------------------------
 
 def main(limit: int = 1, target_url: str | None = None,
-         min_score: int = 7, headless: bool = False, model: str = "sonnet",
+         min_score: int = config.DEFAULT_MIN_SCORE, headless: bool = False, model: str = "sonnet",
          dry_run: bool = False, continuous: bool = False,
          poll_interval: int = 60, workers: int = 1) -> None:
     """Launch the apply pipeline.

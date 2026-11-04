@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from applypilot import __version__
+from applypilot.config import DEFAULT_MIN_SCORE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +84,9 @@ def run(
             "Defaults to 'all' if omitted."
         ),
     ),
-    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
+    min_score: int = typer.Option(
+        DEFAULT_MIN_SCORE, "--min-score", help="Minimum fit score for tailor/cover stages."
+    ),
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
@@ -146,7 +149,9 @@ def run(
 def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
-    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for job selection."),
+    min_score: int = typer.Option(
+        DEFAULT_MIN_SCORE, "--min-score", help="Minimum fit score for job selection."
+    ),
     model: str = typer.Option("haiku", "--model", "-m", help="Claude model name."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
@@ -186,10 +191,7 @@ def apply(
 
     # --- Full apply mode ---
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
-    check_tier(3, "auto-apply")
-
-    # Check 2: Profile exists
+    # Check 1: Profile exists
     if not _profile_path.exists():
         console.print(
             "[red]Profile not found.[/red]\n"
@@ -197,7 +199,7 @@ def apply(
         )
         raise typer.Exit(code=1)
 
-    # Check 3: Tailored resumes exist (skip for --gen with --url)
+    # Check 2: Tailored resumes exist (skip for --gen with --url)
     if not (gen and url):
         conn = get_connection()
         ready = conn.execute(
@@ -205,10 +207,13 @@ def apply(
         ).fetchone()[0]
         if ready == 0:
             console.print(
-                "[red]No tailored resumes ready.[/red]\n"
+                "[red]No resumes available to apply.[/red]\n"
                 "Run [bold]applypilot run score tailor[/bold] first to prepare applications."
             )
             raise typer.Exit(code=1)
+
+    # Check 3: Tier 3 required (Claude Code CLI + Chrome)
+    check_tier(3, "auto-apply")
 
     if gen:
         from applypilot.apply.launcher import gen_prompt, BASE_CDP_PORT
@@ -279,7 +284,8 @@ def status() -> None:
     summary.add_row("Scored by LLM", str(stats["scored"]))
     summary.add_row("Pending scoring", str(stats["unscored"]))
     summary.add_row("Tailored resumes", str(stats["tailored"]))
-    summary.add_row("Pending tailoring (7+)", str(stats["untailored_eligible"]))
+    summary.add_row(f"Pending tailoring ({DEFAULT_MIN_SCORE}+)", str(stats["untailored_eligible"]))
+    summary.add_row("Tailoring attempts exhausted", str(stats["tailor_exhausted"]))
     summary.add_row("Cover letters", str(stats["with_cover_letter"]))
     summary.add_row("Ready to apply", str(stats["ready_to_apply"]))
     summary.add_row("Applied", str(stats["applied"]))
@@ -376,7 +382,7 @@ def doctor() -> None:
         results.append(("python-jobspy", ok_mark, "Job board scraping available"))
     except ImportError:
         results.append(("python-jobspy", warn_mark,
-                        "pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex"))
+                        "pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex curl_cffi"))
 
     # --- Tier 2 checks ---
     import os

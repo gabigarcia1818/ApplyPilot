@@ -11,7 +11,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
+from applypilot.config import COVER_LETTER_DIR, DEFAULT_MIN_SCORE, RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 from applypilot.scoring.validator import (
@@ -185,7 +185,7 @@ def generate_cover_letter(
 
 # ── Batch Entry Point ────────────────────────────────────────────────────
 
-def run_cover_letters(min_score: int = 7, limit: int = 20,
+def run_cover_letters(min_score: int = DEFAULT_MIN_SCORE, limit: int = 20,
                       validation_mode: str = "normal") -> dict:
     """Generate cover letters for high-scoring jobs that have tailored resumes.
 

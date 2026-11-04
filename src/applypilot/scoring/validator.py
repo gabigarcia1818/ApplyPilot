@@ -126,10 +126,15 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
     # Skills: check for fabrication (always enforced)
     if isinstance(data["skills"], dict):
         skills_text = " ".join(str(v) for v in data["skills"].values()).lower()
+        allowed_skills = _build_skills_set(profile)
         for fake in FABRICATION_WATCHLIST:
             if len(fake) <= 2:
                 continue
-            if fake in skills_text:
+            is_allowed = any(
+                re.search(r"\b" + re.escape(fake) + r"\b", skill)
+                for skill in allowed_skills
+            )
+            if fake in skills_text and not is_allowed:
                 errors.append(f"Fabricated skill: '{fake}'")
 
     # Experience: preserved companies must be present (always enforced)
